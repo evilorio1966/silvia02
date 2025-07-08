@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel de Cuidado del Paciente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: Se ha diseñado una estructura de panel de control (dashboard) con un enfoque temático. La parte superior presenta un resumen cuantitativo y una visualización de gráfico de dona para una comprensión inmediata del progreso. Debajo, se utilizan botones de filtrado por categorías para permitir al usuario centrarse en tipos de tareas específicas (Médico, Higiene, etc.), reduciendo la carga cognitiva. La lista de tareas es interactiva, permitiendo marcar la finalización. Las notas críticas, como los rechazos de tareas, se colocan en una sección destacada y siempre visible para garantizar que reciban la atención necesaria. Esta estructura se eligió porque convierte una lista de tareas pasiva en una herramienta de gestión activa, mejorando la usabilidad y la eficiencia para el cuidador. -->
+    <!-- Visualization & Content Choices: 
+        - Resumen de Visita (Informar): Se usan bloques de texto grandes y claros para las métricas clave (Total, Completadas, Pendientes). Método: HTML/Tailwind. Justificación: Proporciona la información más crítica de un vistazo.
+        - Progreso de Tareas (Comparar): Un gráfico de dona compara tareas completadas vs. pendientes. Método: Chart.js (Canvas). Interacción: Se actualiza dinámicamente cuando se marca una tarea. Justificación: Ofrece una representación visual instantánea del estado general de la visita.
+        - Lista de Tareas (Organizar/Interactuar): Las tareas se organizan en una lista de tarjetas filtrables. Método: HTML/Tailwind/JS. Interacción: Clic en los botones de filtro para cambiar la vista; clic en el checkbox para marcar como completada. Justificación: Permite una gestión enfocada y un seguimiento claro del trabajo realizado.
+        - Notas de Rechazo (Informar/Alertar): Un bloque de texto destacado con un color de alerta. Método: HTML/Tailwind. Justificación: Asegura que la información crítica sobre el comportamiento del paciente no se pierda.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container { position: relative; width: 100%; max-width: 300px; margin-left: auto; margin-right: auto; height: 300px; }
+        .task-card { transition: all 0.3s ease; }
+        .task-card.completed {
+            background-color: #f0fdf4; /* green-50 */
+            border-left-color: #22c55e; /* green-500 */
+        }
+        .task-card.completed .task-text {
+            text-decoration: line-through;
+            color: #6b7280; /* gray-500 */
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-slate-900">Plan de Cuidado Interactivo</h1>
+            <p class="text-lg text-slate-600 mt-1">Visita para: <span class="font-semibold">Noah Santosleger</span></p>
+            <p class="text-sm text-slate-500">07 de Julio</p>
+            <button id="export-pdf-btn" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full shadow-lg transition duration-300 ease-in-out">
+                Exportar a PDF
+            </button>
+        </header>
+
+        <main class="space-y-8">
+            
+            <section id="summary-section">
+                <div class="text-center mb-6">
+                     <h2 class="text-xl font-semibold text-slate-900">Resumen de la Visita</h2>
+                     <p class="text-slate-600 mt-1">Este panel muestra el estado actual de todas las tareas asignadas para la visita. Utilice el gráfico y los contadores para un seguimiento rápido del progreso.</p>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
+                    <div class="lg:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
+                        <div class="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 class="text-slate-500 text-sm font-medium">TAREAS TOTALES</h3>
+                            <p id="total-tasks" class="text-4xl font-bold text-blue-600">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 class="text-slate-500 text-sm font-medium">COMPLETADAS</h3>
+                            <p id="completed-tasks" class="text-4xl font-bold text-green-600">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-xl shadow-sm">
+                            <h3 class="text-slate-500 text-sm font-medium">PENDIENTES</h3>
+                            <p id="pending-tasks" class="text-4xl font-bold text-amber-600">0</p>
+                        </div>
+                    </div>
+                    <div class="bg-white p-4 rounded-xl shadow-sm chart-container">
+                        <canvas id="progressChart"></canvas>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="alerts-section">
+                 <div class="bg-amber-100 border-l-4 border-amber-500 text-amber-700 p-4 rounded-r-lg shadow-sm" role="alert">
+                    <h2 class="font-bold text-lg mb-2">Notas Importantes (Rechazo de Tareas)</h2>
+                    <p class="mb-2">Esta sección destaca las interacciones donde el paciente ha rechazado el cuidado ofrecido. Es crucial revisar y documentar estas instancias.</p>
+                    <ul id="refusal-list" class="list-disc list-inside space-y-1">
+                    </ul>
+                </div>
+            </section>
+
+            <section id="tasks-section">
+                <div class="text-center mb-6">
+                     <h2 class="text-xl font-semibold text-slate-900">Lista de Tareas</h2>
+                     <p class="text-slate-600 mt-1">Filtre las tareas por categoría para enfocarse en áreas específicas del cuidado. Marque cada tarea a medida que la complete para actualizar el progreso general.</p>
+                </div>
+                <div id="filters" class="flex flex-wrap justify-center gap-2 mb-6">
+                    <button data-filter="all" class="filter-btn bg-blue-600 text-white py-2 px-4 rounded-full text-sm font-semibold shadow-md">Todas</button>
+                    <button data-filter="medico" class="filter-btn bg-white text-slate-700 py-2 px-4 rounded-full text-sm font-semibold shadow-sm">Cuidado Médico</button>
+                    <button data-filter="higiene" class="filter-btn bg-white text-slate-700 py-2 px-4 rounded-full text-sm font-semibold shadow-sm">Higiene Personal</button>
+                    <button data-filter="entorno" class="filter-btn bg-white text-slate-700 py-2 px-4 rounded-full text-sm font-semibold shadow-sm">Entorno</button>
+                    <button data-filter="adicional" class="filter-btn bg-white text-slate-700 py-2 px-4 rounded-full text-sm font-semibold shadow-sm">Otras Tareas</button>
+                </div>
+
+                <div id="task-list" class="space-y-3">
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const allTasks = [
+        { id: 39, text: 'Tomar la presión arterial', category: 'medico', status: 'pending' },
+        { id: 40, text: 'Recordar tomar la medicación', category: 'medico', status: 'pending' },
+        { id: 64, text: 'Tomar respiraciones', category: 'medico', status: 'pending' },
+        { id: 91, text: 'Monitorear la seguridad del paciente', category: 'medico', status: 'pending' },
+        { id: 256, text: 'Ofrecer líquidos', category: 'medico', status: 'pending' },
+        { id: 67, text: 'Cuidado de pies diabéticos', category: 'medico', status: 'pending' },
+        { id: 72, text: 'Prueba de glucosa', category: 'medico', status: 'pending' },
+        { id: 73, text: 'Administración de insulina', category: 'medico', status: 'pending' },
+        { id: 74, text: 'Preparar y administrar tratamiento con nebulizador', category: 'medico', status: 'pending' },
+        { id: 75, text: 'Administrar gotas para los oídos', category: 'medico', status: 'pending' },
+        { id: 76, text: 'Administrar gotas para los ojos', category: 'medico', status: 'pending' },
+        { id: 86, text: 'Asistir con el cuidado del catéter', category: 'medico', status: 'pending' },
+        { id: 87, text: 'Asistir con el cuidado de la ostomía', category: 'medico', status: 'pending' },
+        { id: 88, text: 'Asistir con el tratamiento', category: 'medico', status: 'pending' },
+        { id: 45, text: 'Hacer/Cambiar la cama', category: 'higiene', status: 'pending' },
+        { id: 46, text: 'Paciente incontinente / Cambiar la cama', category: 'higiene', status: 'pending' },
+        { id: 53, text: 'Ducha con silla', category: 'higiene', status: 'pending' },
+        { id: 82, text: 'El paciente está en dieta prescrita', category: 'higiene', status: 'pending' },
+        { id: 258, text: 'Vaciar orinal', category: 'higiene', status: 'pending' },
+        { id: 47, text: 'Aspirar', category: 'entorno', status: 'pending' },
+        { id: 48, text: 'Quitar el polvo', category: 'entorno', status: 'pending' },
+        { id: 49, text: 'Lavandería del paciente', category: 'entorno', status: 'pending' },
+        { id: 50, text: 'Limpiar el baño', category: 'entorno', status: 'pending' },
+        { id: 51, text: 'Limpiar la cocina', category: 'entorno', status: 'pending' },
+        { id: 89, text: 'Limpiar equipo de cuidado del paciente', category: 'entorno', status: 'pending' },
+        { id: 54, text: 'Acompañar al paciente a la cita médica si es necesario', category: 'adicional', status: 'pending' },
+        { id: 70, text: 'Acompañar a la sala de medicación', category: 'adicional', status: 'pending' },
+        { id: 93, text: 'Acompañar a la sala de medicación', category: 'adicional', status: 'pending' },
+        { id: 83, text: 'Transferencias', category: 'adicional', status: 'pending' },
+        { id: 84, text: 'Ejercicios de rango de movimiento', category: 'adicional', status: 'pending' },
+        { id: 44, text: 'Hacer recados del paciente', category: 'adicional', status: 'pending' },
+        { id: 92, text: 'Hacer recados del paciente', category: 'adicional', status: 'pending' },
+        { id: 90, text: 'Actividades de diversión - Hablar/Leer', category: 'adicional', status: 'pending' },
+    ];
+    
+    const refusalTasks = [
+        { id: 80, text: 'Rechazó algunas tareas de cuidado personal' },
+        { id: 81, text: 'Rechazó todas las tareas de cuidado personal' }
+    ];
+
+    const taskList = document.getElementById('task-list');
+    const refusalList = document.getElementById('refusal-list');
+    const totalTasksEl = document.getElementById('total-tasks');
+    const completedTasksEl = document.getElementById('completed-tasks');
+    const pendingTasksEl = document.getElementById('pending-tasks');
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    const exportPdfBtn = document.getElementById('export-pdf-btn');
+    
+    let currentFilter = 'all';
+    let progressChart;
+
+    const categoryIcons = {
+        medico: '❤️',
+        higiene: '🧼',
+        entorno: '🧹',
+        adicional: '🚶‍♂️'
+    };
+
+    function renderTasks() {
+        taskList.innerHTML = '';
+        const filteredTasks = allTasks.filter(task => currentFilter === 'all' || task.category === currentFilter);
+
+        if (filteredTasks.length === 0) {
+            taskList.innerHTML = `<div class="text-center text-slate-500 p-8 bg-white rounded-xl shadow-sm">No hay tareas en esta categoría.</div>`;
+            return;
+        }
+
+        filteredTasks.forEach(task => {
+            const isCompleted = task.status === 'completed';
+            const card = document.createElement('div');
+            card.className = `task-card bg-white p-4 rounded-lg shadow-sm flex items-center gap-4 border-l-4 ${isCompleted ? 'completed' : 'border-slate-200'}`;
+            card.innerHTML = `
+                <input type="checkbox" data-id="${task.id}" class="h-6 w-6 rounded border-gray-300 text-blue-600 focus:ring-blue-500" ${isCompleted ? 'checked' : ''}>
+                <span class="flex-grow task-text font-medium">${task.text}</span>
+                <span class="text-2xl">${categoryIcons[task.category] || '📋'}</span>
+            `;
+            taskList.appendChild(card);
+        });
+    }
+
+    function updateSummary() {
+        const total = allTasks.length;
+        const completed = allTasks.filter(t => t.status === 'completed').length;
+        const pending = total - completed;
+
+        totalTasksEl.textContent = total;
+        completedTasksEl.textContent = completed;
+        pendingTasksEl.textContent = pending;
+
+        updateChart(completed, pending);
+    }
+    
+    function renderRefusals() {
+        refusalList.innerHTML = '';
+        refusalTasks.forEach(task => {
+            const li = document.createElement('li');
+            li.textContent = task.text;
+            refusalList.appendChild(li);
+        });
+    }
+
+    function setupChart() {
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        progressChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Completadas', 'Pendientes'],
+                datasets: [{
+                    data: [0, allTasks.length],
+                    backgroundColor: [
+                        '#16a34a', // green-600
+                        '#ca8a04'  // amber-600
+                    ],
+                    borderColor: '#f8fafc', // slate-50
+                    borderWidth: 4,
+                    hoverOffset: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            boxWidth: 12,
+                            font: {
+                                size: 14
+                            }
+                        }
+                    },
+                    tooltip: {
+                        enabled: true
+                    }
+                }
+            }
+        });
+    }
+
+    function updateChart(completed, pending) {
+        progressChart.data.datasets[0].data[0] = completed;
+        progressChart.data.datasets[0].data[1] = pending;
+        progressChart.update();
+    }
+    
+    function handleTaskClick(e) {
+        if (e.target.matches('input[type="checkbox"]')) {
+            const taskId = parseInt(e.target.dataset.id, 10);
+            const task = allTasks.find(t => t.id === taskId);
+            if (task) {
+                task.status = e.target.checked ? 'completed' : 'pending';
+                updateSummary();
+                renderTasks();
+            }
+        }
+    }
+
+    function handleFilterClick(e) {
+        const button = e.target.closest('.filter-btn');
+        if (!button) return;
+
+        currentFilter = button.dataset.filter;
+        
+        filterButtons.forEach(btn => {
+            btn.classList.remove('bg-blue-600', 'text-white');
+            btn.classList.add('bg-white', 'text-slate-700');
+        });
+        
+        button.classList.add('bg-blue-600', 'text-white');
+        button.classList.remove('bg-white', 'text-slate-700');
+        
+        renderTasks();
+    }
+
+    function exportToPdf() {
+        const element = document.body; // Captura todo el cuerpo de la página
+        const opt = {
+            margin:       1,
+            filename:     'plan_cuidado_paciente.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { scale: 2, useCORS: true },
+            jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+        };
+        html2pdf().set(opt).from(element).save();
+    }
+
+    function init() {
+        setupChart();
+        renderTasks();
+        renderRefusals();
+        updateSummary();
+        taskList.addEventListener('click', handleTaskClick);
+        document.getElementById('filters').addEventListener('click', handleFilterClick);
+        exportPdfBtn.addEventListener('click', exportToPdf);
+    }
+
+    init();
+});
+</script>
+</body>
+</html>
